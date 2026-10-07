@@ -55,15 +55,24 @@ fun shortVerdict(r: String): String = when {
 }
 
 /** Per problem letter: solved if any finished run was accepted, otherwise the verdict of the last finished run. */
-fun problemStates(runs: List<Run>): Map<String, ProblemState> {
+fun problemStates(runs: List<Run>, tabs: Map<String, String> = emptyMap()): Map<String, ProblemState> {
     val byLetter = runs.filter { !it.inProgress }.groupBy { run ->
         run.columns.entries.firstOrNull { it.key.contains(Regex("задача|problem", RegexOption.IGNORE_CASE)) }
             ?.value?.trim()?.split(' ', ':', '.')?.firstOrNull().orEmpty()
     }
-    return byLetter.filterKeys { it.isNotEmpty() }.mapValues { (_, list) ->
+    val fromRuns = byLetter.filterKeys { it.isNotEmpty() }.mapValues { (_, list) ->
         if (list.any { ACCEPTED.containsMatchIn(it.result) }) ProblemState(true, "OK")
         else ProblemState(false, shortVerdict(list.last().result))
     }
+    val result = fromRuns.toMutableMap()
+    for ((letter, cls) in tabs) {
+        when {
+            cls.contains("Ok") -> result[letter] = ProblemState(true, "OK")
+            cls.contains("Empty") -> {}
+            else -> if (result[letter]?.solved != true) result[letter] = result[letter] ?: ProblemState(false, "FAIL")
+        }
+    }
+    return result
 }
 
 /**
@@ -111,10 +120,22 @@ class EjudgeClient(private val serverUrl: String, private val contestId: Int) {
     /** Parses the runs table (page linked as "Посылки"/"Runs") and returns runs sorted by id. */
     fun runs(): List<Run> = runsOrNull() ?: emptyList()
 
+    /** The server colours the problem tabs itself: letter -> css class (nProbOk, nProbBad, nProbEmpty ...). */
+    fun tabClasses(): Map<String, String> {
+        val doc = Jsoup.parse(lastRunsHtml)
+        return doc.select("div[class^=nProb]").mapNotNull { div ->
+            val a = div.selectFirst("a[href*=prob_id=]") ?: return@mapNotNull null
+            a.text().trim() to div.className()
+        }.toMap()
+    }
+
     /** Null when no runs table could be found on the page. */
     fun runsOrNull(): List<Run>? {
         val link = mainPage.select("a").firstOrNull { it.text().contains(Regex("посылки|runs|submissions", RegexOption.IGNORE_CASE)) }
-        val doc = if (link != null) get(URI.create(link.absUrl("href"))) else mainPage
+        var doc = if (link != null) get(URI.create(link.absUrl("href"))) else mainPage
+        // the page may show only the latest runs; follow a "show all" link if there is one
+        val all = doc.select("a").firstOrNull { it.attr("href").contains("all_runs=1") }
+        if (all != null) doc = get(URI.create(all.absUrl("href")))
         lastRunsHtml = doc.outerHtml()
         for (table in doc.select("table")) {
             val rows = table.select("tr")

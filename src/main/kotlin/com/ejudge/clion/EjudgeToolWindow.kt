@@ -281,14 +281,15 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
             try {
                 val client = EjudgeClient(s.state.serverUrl, contestId)
                 client.login(s.state.login, s.password)
-                val fresh = problemStates(client.runs())
+                val runs = client.runs()
+                val fresh = problemStates(runs, client.tabClasses())
                 ApplicationManager.getApplication().invokeLater {
                     if (problems.size() > 0 && problems[0].dir.parent == first.dir.parent) {
                         states.clear(); states.putAll(fresh); problemList.repaint()
                     }
                 }
-            } catch (_: Exception) {
-                // offline or wrong login: the list simply stays uncoloured
+            } catch (ex: Exception) {
+                com.intellij.openapi.diagnostic.Logger.getInstance("Ejudge").warn("Could not load problem states: ${ex.message}", ex)
             }
         }
     }
