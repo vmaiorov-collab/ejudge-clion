@@ -23,6 +23,26 @@ curl -L -o /tmp/ejudge-clion.zip https://github.com/vmaiorov-collab/ejudge-clion
 
 Затем запустите CLion. Если у вас другая версия CLion, замените `CLion2026.2` в пути на свою папку из `~/Library/Application Support/JetBrains/`.
 
+### Установка одной командой (Linux)
+
+Закройте CLion и выполните в терминале:
+
+```
+curl -L -o /tmp/ejudge-clion.zip https://github.com/vmaiorov-collab/ejudge-clion/releases/latest/download/ejudge-clion-0.1.0.zip \
+  && unzip -o /tmp/ejudge-clion.zip -d "$HOME/.local/share/JetBrains/CLion2026.2/plugins"
+```
+
+### Установка одной командой (Windows, PowerShell)
+
+Закройте CLion и выполните в PowerShell:
+
+```
+Invoke-WebRequest https://github.com/vmaiorov-collab/ejudge-clion/releases/latest/download/ejudge-clion-0.1.0.zip -OutFile $env:TEMP\ejudge-clion.zip
+Expand-Archive -Force $env:TEMP\ejudge-clion.zip "$env:APPDATA\JetBrains\CLion2026.2\plugins"
+```
+
+Если у вас другая версия CLion, замените `CLion2026.2` в пути на свою папку. На Windows для запуска тестов нужен компилятор `c++` (например, MinGW) в `PATH`, а команда `python3` должна запускать Python.
+
 Для запуска тестов на компьютере должны быть `c++` (на macOS ставится командой `xcode-select --install`) и `python3`.
 
 ## Сборка из исходников
