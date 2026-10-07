@@ -68,6 +68,25 @@ class StatementPanel private constructor(private val project: Project) : JPanel(
         try {
             val content = statementBody(Jsoup.parse(Files.readString(f)))
             content.select(".math").forEach { it.html(TexText.toHtml(it.text())) }
+            var remote = false
+            for (img in content.select("img")) {
+                val src = img.attr("src")
+                val local = if (src.startsWith("http")) null else dir.resolve(src)
+                if (local == null || !Files.exists(local)) {
+                    remote = remote || local == null
+                    img.replaceWith(org.jsoup.nodes.TextNode("[picture is loading…]"))
+                    continue
+                }
+                img.attr("src", local.toUri().toString())
+                img.removeAttr("style")
+                try {
+                    javax.imageio.ImageIO.read(local.toFile())?.let {
+                        val w = minOf(it.width, 560)
+                        img.attr("width", w.toString()).attr("height", (it.height * w / it.width).toString())
+                    }
+                } catch (_: Exception) {}
+            }
+            if (remote) fetchImages(dir)
             statementHtml = content.html()
             title.text = dir.fileName.toString()
             render()
@@ -76,6 +95,34 @@ class StatementPanel private constructor(private val project: Project) : JPanel(
             render()
         }
         if (activate || autoShow) ToolWindowManager.getInstance(project).getToolWindow(ID)?.show()
+    }
+
+    private val fetching = java.util.concurrent.ConcurrentHashMap.newKeySet<Path>()
+
+    /** Old imports kept session-bound image URLs: download the pictures now and show the statement again. */
+    private fun fetchImages(dir: Path) {
+        if (!fetching.add(dir)) return
+        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                val marker = Files.readAllLines(dir.resolve(MARKER))
+                val id = marker[0].trim()
+                val contestId = marker[2].trim().toInt()
+                val s = EjudgeSettings.getInstance()
+                val client = EjudgeClient(s.state.serverUrl, contestId)
+                client.login(s.state.login, s.password)
+                val problem = client.problems().first { it.id == id }
+                val body = statementBody(client.statement(problem))
+                StatementImages.localize(client, body, dir)
+                Files.writeString(dir.resolve("statement.html"), "<html><head><meta charset=\"utf-8\"></head><body>${body.html()}</body></html>")
+                if (body.select("img").none { it.attr("src").startsWith("http") }) {
+                    com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater { show(dir, false) }
+                }
+            } catch (ex: Exception) {
+                com.intellij.openapi.diagnostic.Logger.getInstance("Ejudge").warn("Could not download statement images: ${ex.message}", ex)
+            } finally {
+                fetching.remove(dir)
+            }
+        }
     }
 
     private fun render() {

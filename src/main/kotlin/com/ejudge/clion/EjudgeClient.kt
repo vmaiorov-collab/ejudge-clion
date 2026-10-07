@@ -270,6 +270,13 @@ class EjudgeClient(private val serverUrl: String, private val contestId: Int) {
         return m
     }
 
+    /** Raw bytes of a file (image) served with the current session. */
+    fun download(url: String): ByteArray {
+        val resp = http.send(HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(60)).GET().build(), HttpResponse.BodyHandlers.ofByteArray())
+        if (resp.statusCode() >= 400) throw EjudgeException("Server returned HTTP ${resp.statusCode()} for $url")
+        return resp.body()
+    }
+
     private fun get(uri: URI): Document {
         val resp = send(HttpRequest.newBuilder(uri).GET())
         return Jsoup.parse(resp.body(), resp.uri().toString())

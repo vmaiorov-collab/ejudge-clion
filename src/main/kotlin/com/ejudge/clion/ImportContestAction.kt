@@ -126,10 +126,9 @@ class ImportContestAction : AnAction() {
             Files.createDirectories(dir.resolve("tests"))
             Files.list(dir.resolve("tests")).use { it.toList() }.forEach { Files.deleteIfExists(it) }
             val st = client.statement(p)
-            Files.writeString(
-                dir.resolve("statement.html"),
-                "<html><head><meta charset=\"utf-8\"></head><body>${statementBody(st).html()}</body></html>"
-            )
+            val body = statementBody(st)
+            StatementImages.localize(client, body, dir)
+            Files.writeString(dir.resolve("statement.html"), "<html><head><meta charset=\"utf-8\"></head><body>${body.html()}</body></html>")
             client.samples(st).forEachIndexed { n, t ->
                 Files.writeString(dir.resolve("tests/${n + 1}.in"), t.input)
                 Files.writeString(dir.resolve("tests/${n + 1}.out"), t.output)
