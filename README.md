@@ -49,6 +49,12 @@ Expand-Archive -Force $env:TEMP\ejudge-clion.zip "$env:APPDATA\JetBrains\CLion20
 
 Для запуска тестов на компьютере должны быть `c++` (на macOS ставится командой `xcode-select --install`) и `python3`.
 
+## Статистика
+
+Плагин анонимно считает, сколько людей им пользуется. Он не отправляет ни идентификатор, ни логин, ни данные контестов: раз при первой установке и раз в день при запуске CLion увеличиваются два публичных счётчика (`installs` и `active-<дата>`). Отключить можно в Settings → Tools → Ejudge → «Send anonymous usage statistics».
+
+Посмотреть числа: `https://abacus.jasoncameron.dev/get/ejudge-clion-vmaiorov/installs` и `.../active-ГГГГ-ММ-ДД`.
+
 ## Сборка из исходников
 
 ```
