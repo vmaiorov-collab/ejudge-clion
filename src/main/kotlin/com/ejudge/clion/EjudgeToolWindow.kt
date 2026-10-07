@@ -57,6 +57,7 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
     private val contests = ComboBox<ContestDir>()
     private val problems = DefaultListModel<ProblemDir>()
     private val problemList = JBList(problems)
+    private val states = mutableMapOf<String, ProblemState>()
     private val results = DefaultListModel<TestResult>()
     private val resultList = JBList(results)
     private val details = JBTextArea().apply {
@@ -104,8 +105,18 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
         problemList.cellRenderer = object : ColoredListCellRenderer<ProblemDir>() {
             override fun customizeCellRenderer(list: JList<out ProblemDir>, value: ProblemDir, index: Int, selected: Boolean, hasFocus: Boolean) {
                 border = JBUI.Borders.empty(3, 8)
-                append(value.letter, SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
+                val st = states[value.letter]
+                val green = JBColor(0x2E8B57, 0x62B543)
+                val red = JBColor(0xD0312D, 0xFF6B68)
+                icon = when {
+                    st == null -> com.intellij.util.ui.EmptyIcon.ICON_16
+                    st.solved -> AllIcons.RunConfigurations.TestPassed
+                    else -> AllIcons.RunConfigurations.TestFailed
+                }
+                val letterColor = when { st == null -> null; st.solved -> green; else -> red }
+                append(value.letter, if (letterColor == null) SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES else SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, letterColor))
                 if (value.title.isNotBlank()) append("   ${value.title}", SimpleTextAttributes.REGULAR_ATTRIBUTES)
+                if (st != null && !st.solved) append("   ${st.verdict}", SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, red))
             }
         }
         resultList.emptyText.text = "Press “Test” to run the examples"
@@ -251,10 +262,33 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
                 val target = pendingSelect ?: editorProblem()
                 val want = target?.let { w -> list.indexOfFirst { it.dir == w } } ?: -1
                 pendingSelect = null
+                loadStates(list)
                 programmatic++
                 try {
                     if (want >= 0) problemList.selectedIndex = want else if (list.isNotEmpty()) problemList.selectedIndex = 0
                 } finally { programmatic-- }
+            }
+        }
+    }
+
+    /** Fetches the runs from the server and colours the problems: green if accepted, red with the verdict if not. */
+    private fun loadStates(list: List<ProblemDir>) {
+        val s = EjudgeSettings.getInstance()
+        val first = list.firstOrNull() ?: return
+        if (s.state.login.isBlank()) return
+        val contestId = try { Files.readAllLines(first.dir.resolve(MARKER)).getOrNull(2)?.trim()?.toIntOrNull() } catch (_: Exception) { null } ?: return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                val client = EjudgeClient(s.state.serverUrl, contestId)
+                client.login(s.state.login, s.password)
+                val fresh = problemStates(client.runs())
+                ApplicationManager.getApplication().invokeLater {
+                    if (problems.size() > 0 && problems[0].dir.parent == first.dir.parent) {
+                        states.clear(); states.putAll(fresh); problemList.repaint()
+                    }
+                }
+            } catch (_: Exception) {
+                // offline or wrong login: the list simply stays uncoloured
             }
         }
     }
@@ -339,6 +373,7 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
               <li><b>Отправьте.</b> «Submit» отправит решение на сервер и покажет вердикт уведомлением.</li>
             </ol>
             <p><b>Автодополнение.</b> Файлы лежат вне вашего проекта. Чтобы заработали подсказки, один раз откройте папку <code>$dir</code> как проект (File → Open).</p>
+            <p><b>Цвета задач.</b> Зелёная галочка — задача принята на сервере. Красный крестик и вердикт (WA, TL, RE…) — решение отправляли, но оно не прошло. Без значка — ещё не отправляли. Цвета обновляются кнопкой обновления и после каждой отправки.</p>
             <p><b>Статистика.</b> Плагин анонимно считает, сколько людей им пользуется: не передаются ни логин, ни данные контестов. Отключить можно в настройках (Settings → Tools → Ejudge).</p>
             <p>Эту подсказку всегда можно вызвать кнопкой «?» справа вверху.</p>
             </body></html>

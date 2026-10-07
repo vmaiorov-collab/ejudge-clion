@@ -39,6 +39,33 @@ data class Run(val id: Int, val columns: Map<String, String>) {
         .ifBlank { columns.values.joinToString(" | ") }
 }
 
+/** Whether a problem is accepted on the server, and the short verdict of the last failed run. */
+data class ProblemState(val solved: Boolean, val verdict: String)
+
+private val ACCEPTED = Regex("^(OK|Accepted|Полное|Принято|Зачтено)", RegexOption.IGNORE_CASE)
+
+fun shortVerdict(r: String): String = when {
+    r.contains(Regex("неправильн|wrong", RegexOption.IGNORE_CASE)) -> "WA"
+    r.contains(Regex("runtime|выполнен", RegexOption.IGNORE_CASE)) -> "RE"
+    r.contains(Regex("врем|time", RegexOption.IGNORE_CASE)) -> "TL"
+    r.contains(Regex("памят|memory", RegexOption.IGNORE_CASE)) -> "ML"
+    r.contains(Regex("компил|compil", RegexOption.IGNORE_CASE)) -> "CE"
+    r.contains(Regex("презент|presentation", RegexOption.IGNORE_CASE)) -> "PE"
+    else -> r.take(12)
+}
+
+/** Per problem letter: solved if any finished run was accepted, otherwise the verdict of the last finished run. */
+fun problemStates(runs: List<Run>): Map<String, ProblemState> {
+    val byLetter = runs.filter { !it.inProgress }.groupBy { run ->
+        run.columns.entries.firstOrNull { it.key.contains(Regex("задача|problem", RegexOption.IGNORE_CASE)) }
+            ?.value?.trim()?.split(' ', ':', '.')?.firstOrNull().orEmpty()
+    }
+    return byLetter.filterKeys { it.isNotEmpty() }.mapValues { (_, list) ->
+        if (list.any { ACCEPTED.containsMatchIn(it.result) }) ProblemState(true, "OK")
+        else ProblemState(false, shortVerdict(list.last().result))
+    }
+}
+
 /**
  * Talks to the ejudge new-client web interface. Forms are discovered from the served HTML
  * (hidden fields and action URLs are copied as-is), so no ejudge action numbers are hard-coded.

@@ -83,6 +83,7 @@ class SubmitAction : AnAction() {
                                 if (run.result.contains(Regex("^(OK|Accepted|Полное|Принято|Зачтено)", RegexOption.IGNORE_CASE))) NotificationType.INFORMATION else NotificationType.ERROR
                             )
                         }
+                        EjudgeEvents.fireChanged()
                     } catch (ex: Exception) {
                         notify(project, "Ejudge submit failed: ${ex.message}", NotificationType.ERROR)
                     }
