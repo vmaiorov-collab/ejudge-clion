@@ -46,7 +46,7 @@ curl -L -o /tmp/ejudge-clion.zip https://github.com/vmaiorov-collab/ejudge-clion
 
 ```
 curl -L -o /tmp/ejudge-clion.zip https://github.com/vmaiorov-collab/ejudge-clion/releases/latest/download/ejudge-clion.zip \
-  && unzip -o /tmp/ejudge-clion.zip -d "$HOME/.local/share/JetBrains/CLion2026.2/plugins"
+  && unzip -o /tmp/ejudge-clion.zip -d "$HOME/.local/share/JetBrains/CLion2026.2"
 ```
 
 ### Установка одной командой (Windows, PowerShell)
