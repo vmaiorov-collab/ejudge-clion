@@ -80,4 +80,4 @@ Expand-Archive -Force $env:TEMP\ejudge-clion.zip "$env:APPDATA\JetBrains\CLion20
 JAVA_HOME=/path/to/CLion.app/Contents/jbr/Contents/Home ./gradlew buildPlugin
 ```
 
-Путь к локальному CLion задаётся в `build.gradle.kts` (`intellijPlatform { local(...) }`). Готовый zip появится в `build/distributions/`.
+По умолчанию Gradle сам скачает CLion 2026.2. Чтобы собирать с уже установленным CLion, добавьте `-PlocalIde=/путь/к/CLion.app`. Готовый zip появится в `build/distributions/`.

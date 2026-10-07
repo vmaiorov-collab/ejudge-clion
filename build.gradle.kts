@@ -11,10 +11,14 @@ repositories {
     intellijPlatform { defaultRepositories() }
 }
 
+// Builds against CLion downloaded from JetBrains by default. To use an installed IDE instead:
+//   ./gradlew buildPlugin -PlocalIde=/Applications/CLion.app
+val localIde = providers.gradleProperty("localIde").orNull
+
 dependencies {
     implementation("org.jsoup:jsoup:1.21.2")
     intellijPlatform {
-        local("/Users/viacheslavmaiorov/Applications/CLion.app")
+        if (localIde != null) local(localIde) else clion("2026.2")
     }
 }
 
