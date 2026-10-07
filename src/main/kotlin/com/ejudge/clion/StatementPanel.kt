@@ -68,6 +68,10 @@ class StatementPanel private constructor(private val project: Project) : JPanel(
         try {
             val content = statementBody(Jsoup.parse(Files.readString(f)))
             content.select(".math").forEach { it.html(TexText.toHtml(it.text())) }
+            content.select("table").filter { !it.hasClass("line-table-wb") }.forEach { t ->
+                t.attr("border", "1").attr("cellspacing", "0").attr("cellpadding", "6").attr("width", "100%")
+                t.select("td, th").forEach { it.addClass("g") }
+            }
             var remote = false
             for (img in content.select("img")) {
                 val src = img.attr("src")
@@ -137,6 +141,7 @@ class StatementPanel private constructor(private val project: Project) : JPanel(
             styleSheet.addRule("pre { font-family: monospace; font-size: ${fontPt}pt; background-color: #$codeBg; margin: 4px; padding: 6px; }")
             styleSheet.addRule("tt { font-family: monospace; }")
             styleSheet.addRule("td { padding: 2px 10px 2px 0px; }")
+            styleSheet.addRule("td.g, th.g { border: 1px solid #${ColorUtil.toHex(JBColor.border())}; padding: 5px; }")
         }
         html.text = "<html><body>$statementHtml</body></html>"
         html.caretPosition = 0
