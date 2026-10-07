@@ -1,0 +1,29 @@
+<idea-plugin>
+    <id>com.ejudge.clion</id>
+    <name>Ejudge</name>
+    <vendor>local</vendor>
+    <description>Import contest problems (statements and sample tests) from an ejudge server and submit solutions from CLion.</description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationService serviceImplementation="com.ejudge.clion.EjudgeSettings"/>
+        <applicationConfigurable parentId="tools" instance="com.ejudge.clion.EjudgeConfigurable"
+                                 id="com.ejudge.clion.settings" displayName="Ejudge"/>
+        <toolWindow id="Ejudge" anchor="right" factoryClass="com.ejudge.clion.EjudgeToolWindowFactory"/>
+        <toolWindow id="Ejudge Statement" anchor="left" secondary="false" factoryClass="com.ejudge.clion.StatementToolWindowFactory"/>
+        <notificationGroup id="Ejudge" displayType="BALLOON"/>
+    </extensions>
+
+    <actions>
+        <group id="Ejudge.Group" text="Ejudge" popup="true">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <action id="Ejudge.Import" class="com.ejudge.clion.ImportContestAction"
+                    text="Import Contest from Ejudge"/>
+            <action id="Ejudge.Submit" class="com.ejudge.clion.SubmitAction"
+                    text="Submit Current File to Ejudge">
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift S"/>
+            </action>
+        </group>
+    </actions>
+</idea-plugin>
