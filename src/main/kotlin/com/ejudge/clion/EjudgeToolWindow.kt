@@ -44,7 +44,6 @@ import javax.swing.JMenuItem
 import javax.swing.JToggleButton
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
-import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.text.html.HTMLEditorKit
 
 class EjudgeToolWindowFactory : ToolWindowFactory, DumbAware {
@@ -102,19 +101,14 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
     private val favOnly = JToggleButton(AllIcons.Nodes.Favorite).apply { toolTipText = "Show only favorite problems" }
     private val summary = JBLabel(" ").apply { foreground = UIUtil.getContextHelpForeground() }
     private var lastRunOk = false
+    private val expectedArea = JBTextArea().apply {
+        font = Font(Font.MONOSPACED, Font.PLAIN, JBUI.scaleFontSize(12f))
+        margin = JBUI.insets(6)
+        emptyText.text = "Expected answer for “Save as test” (optional: if empty, the output of the last run is used)"
+    }
+    private val deleteTestButton = JButton("Delete this test", AllIcons.Actions.GC).apply { isEnabled = false }
     private var lastRunInput = ""
     private val saveTestButton = JButton("Save as test", AllIcons.Actions.MenuSaveall)
-    private val stressArea = JBTextArea().apply {
-        isEditable = false
-        font = Font(Font.MONOSPACED, Font.PLAIN, JBUI.scaleFontSize(12f))
-        margin = JBUI.insets(8)
-    }
-    private val stressStart = JButton("Run", AllIcons.Actions.Execute)
-    private val stopStress = JButton("Stop", AllIcons.Actions.Suspend).apply { isEnabled = false }
-    private val stressSave = JButton("Save as test", AllIcons.Actions.MenuSaveall).apply { isEnabled = false }
-    private val stressCancel = AtomicBoolean(false)
-    private var stressFailure: TestRunner.StressFailure? = null
-    private var stressDir: Path? = null
     private val historyModel = DefaultListModel<Run>()
     private val historyList = JBList(historyModel)
     private val historyCode = JBTextArea().apply {
@@ -180,11 +174,10 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
         val submitButton = JButton("Submit", AllIcons.Actions.Upload)
         val runButton = JButton("Run with my input", AllIcons.Actions.Lightning)
         val testSubmitButton = JButton("Test & submit", AllIcons.Actions.Commit)
-        val stressButton = JButton("Stress test", AllIcons.Actions.Rerun)
         val historyButton = JButton("My submissions", AllIcons.Vcs.History)
         val actions = JPanel(GridLayout(0, 2, JBUI.scale(6), JBUI.scale(6))).apply {
             border = JBUI.Borders.empty(8)
-            add(testButton); add(testSubmitButton); add(runButton); add(stressButton)
+            add(testButton); add(testSubmitButton); add(runButton)
             add(statementButton); add(submitButton); add(historyButton)
         }
         val problemPane = JPanel(BorderLayout()).apply {
@@ -198,22 +191,24 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
         }
         cards.add(JPanel(BorderLayout()).apply {
             add(JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(6), JBUI.scale(4))).apply { add(runNowButton); add(saveTestButton); add(JBLabel("Input → Output")) }, BorderLayout.NORTH)
-            add(JBSplitter(true, 0.5f).apply {
+            add(JBSplitter(true, 0.4f).apply {
                 firstComponent = JBScrollPane(inputArea)
-                secondComponent = JBScrollPane(outputArea)
+                secondComponent = JBSplitter(true, 0.5f).apply {
+                    firstComponent = JBScrollPane(outputArea)
+                    secondComponent = JBScrollPane(expectedArea)
+                }
             }, BorderLayout.CENTER)
         }, "run")
-        cards.add(JBSplitter(true, 0.5f).apply {
-            firstComponent = JBScrollPane(resultList)
-            secondComponent = JBScrollPane(details)
-        }, "tests")
         cards.add(JPanel(BorderLayout()).apply {
             add(JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(6), JBUI.scale(4))).apply {
-                add(stressStart); add(stopStress); add(stressSave)
-                add(JBLabel("brute.cpp = slow correct solution, gen.cpp = random test generator"))
+                add(deleteTestButton)
+                add(JBLabel("Only your own tests can be deleted"))
             }, BorderLayout.NORTH)
-            add(JBScrollPane(stressArea), BorderLayout.CENTER)
-        }, "stress")
+            add(JBSplitter(true, 0.5f).apply {
+                firstComponent = JBScrollPane(resultList)
+                secondComponent = JBScrollPane(details)
+            }, BorderLayout.CENTER)
+        }, "tests")
         historyList.emptyText.text = "No submissions of this problem yet"
         historyList.cellRenderer = object : ColoredListCellRenderer<Run>() {
             override fun customizeCellRenderer(list: JList<out Run>, value: Run, index: Int, selected: Boolean, hasFocus: Boolean) {
@@ -264,21 +259,9 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
         runButton.addActionListener { selectedDir()?.let { showRunCard(it) } ?: info("Select a problem first") }
         testButton.addActionListener { selectedDir()?.let { runTests(it, thenSubmit = false) } ?: info("Select a problem first") }
         testSubmitButton.addActionListener { selectedDir()?.let { runTests(it, thenSubmit = true) } ?: info("Select a problem first") }
-        stressButton.addActionListener { selectedDir()?.let { showStress(it) } ?: info("Select a problem first") }
-        historyButton.addActionListener { selectedDir()?.let { showHistory(it) } ?: info("Select a problem first") }
-        stressStart.addActionListener { startStress() }
-        stopStress.addActionListener { stressCancel.set(true) }
-        stressSave.addActionListener {
-            val f = stressFailure; val d = stressDir
-            if (f != null && d != null) {
-                val name = TestRunner.saveCustomTest(d, f.input, f.expected)
-                info("Saved as test $name. It runs together with the examples", true)
-                stressSave.isEnabled = false
-            }
-        }
         saveTestButton.addActionListener { saveRunAsTest() }
+        deleteTestButton.addActionListener { resultList.selectedValue?.takeIf { it.custom }?.let { deleteTest(it) } }
         saveTestButton.toolTipText = "Keep this input (and the current output as the expected answer) as your own test. It runs together with the examples"
-        stressButton.toolTipText = "Compare the solution with a slow brute-force solution on random tests"
         testSubmitButton.toolTipText = "Check the examples and, if they all pass, send the solution to the server"
         historyButton.toolTipText = "All submissions of this problem with their verdicts and code"
         historyOpen.addActionListener { openHistoryFile() }
@@ -315,13 +298,7 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
                 if (!r.custom) return
                 resultList.selectedIndex = i
                 val item = JMenuItem("Delete this test", AllIcons.Actions.GC)
-                item.addActionListener {
-                    r.file?.let { f ->
-                        Files.deleteIfExists(f)
-                        Files.deleteIfExists(f.resolveSibling(f.fileName.toString().removeSuffix(".in") + ".out"))
-                    }
-                    results.removeElement(r)
-                }
+                item.addActionListener { deleteTest(r) }
                 JPopupMenu().apply { add(item) }.show(resultList, e.x, e.y)
             }
         })
@@ -345,6 +322,7 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
             }
         }
         resultList.addListSelectionListener {
+            deleteTestButton.isEnabled = resultList.selectedValue?.custom == true
             val r = resultList.selectedValue ?: return@addListSelectionListener
             details.text = "Input\n${r.input}\nExpected\n${r.expected}\nYour output\n${r.actual}" +
                 (if (r.note.isNotBlank()) "\n${r.note}" else "")
@@ -555,7 +533,7 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
             </ol>
             <p><b>Автодополнение.</b> Файлы лежат вне вашего проекта. Чтобы заработали подсказки, один раз откройте папку <code>$dir</code> как проект (File → Open).</p>
             <p><b>Цвета задач.</b> Зелёная галочка — задача принята на сервере. Красный крестик и вердикт (WA, TL, RE…) — решение отправляли, но оно не прошло. Без значка — ещё не отправляли. Цвета обновляются кнопкой обновления и после каждой отправки.</p>
-            <p><b>Другие кнопки.</b> «Test &amp; submit» отправляет решение, только если все тесты прошли. «Save as test» в окне своего ввода сохраняет тест, и он проверяется вместе с примерами (удалить: правая кнопка по тесту). «Stress test» создаёт <code>brute.cpp</code> (медленное верное решение) и <code>gen.cpp</code> (случайный тест) и ищет ввод, на котором ответы разошлись. «My submissions» показывает все ваши посылки и их код. Поиск над списком и правая кнопка по задаче (★ избранное) помогают найти нужную.</p>
+            <p><b>Другие кнопки.</b> «Test &amp; submit» отправляет решение, только если все тесты прошли. «Save as test» в окне своего ввода сохраняет тест (ответ можно вписать в нижнее поле), и он проверяется вместе с примерами (удалить: правая кнопка по тесту). «My submissions» показывает все ваши посылки и их код. Поиск над списком и правая кнопка по задаче (★ избранное) помогают найти нужную.</p>
             <p><b>Статистика.</b> Плагин анонимно считает, сколько людей им пользуется: не передаются ни логин, ни данные контестов. Отключить можно в настройках (Settings → Tools → Ejudge).</p>
             <p>Эту подсказку всегда можно вызвать кнопкой «?» справа вверху.</p>
             </body></html>
@@ -679,87 +657,26 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
         }
     }
 
+    private fun deleteTest(r: TestResult) {
+        r.file?.let { f ->
+            Files.deleteIfExists(f)
+            Files.deleteIfExists(f.resolveSibling(f.fileName.toString().removeSuffix(".in") + ".out"))
+        }
+        results.removeElement(r)
+        details.text = ""
+        info("Test ${r.name} deleted", true)
+    }
+
     private fun saveRunAsTest() {
         val dir = runDir ?: return
         val input = inputArea.text
         if (input.isBlank()) { info("Type an input first", false); return }
-        val out = if (lastRunOk && input == lastRunInput) outputArea.text else null
+        val out = expectedArea.text.takeIf { it.isNotBlank() } ?: if (lastRunOk && input == lastRunInput) outputArea.text else null
         val name = TestRunner.saveCustomTest(dir, input, out)
         info(
-            if (out.isNullOrBlank()) "Saved as test $name (no expected answer yet: run the program first to keep its output)"
+            if (out.isNullOrBlank()) "Saved as test $name (no expected answer: type it below or run the program first)"
             else "Saved as test $name. It runs together with the examples", true
         )
-    }
-
-    private fun showStress(dir: Path) {
-        stressDir = dir
-        stressFailure = null
-        stressSave.isEnabled = false
-        val created = mutableListOf<Path>()
-        if (TestRunner.auxOf(dir, "brute") == null) {
-            val f = dir.resolve("brute.cpp")
-            Files.writeString(f, BRUTE_TEMPLATE); created.add(f)
-        }
-        if (TestRunner.auxOf(dir, "gen") == null) {
-            val f = dir.resolve("gen.cpp")
-            Files.writeString(f, GEN_TEMPLATE); created.add(f)
-        }
-        (cards.layout as CardLayout).show(cards, "stress")
-        setBottomVisible(true)
-        body.proportion = 0.42f
-        if (created.isEmpty()) {
-            stressArea.text = STRESS_HELP
-        } else {
-            stressArea.text = "Created ${created.joinToString { it.fileName.toString() }} next to your solution and opened it.\n\n" +
-                "1. In brute.cpp write a simple solution that is slow but certainly correct.\n" +
-                "2. In gen.cpp make the generator print one small random test.\n" +
-                "3. Press “Run”.\n\n" + STRESS_HELP
-            val root = EjudgeSettings.getInstance().contestsPath()
-            ApplicationManager.getApplication().executeOnPooledThread { try { CMakeGen.generate(root) } catch (_: Exception) {} }
-            created.forEach { open(it) }
-        }
-    }
-
-    private fun startStress() {
-        val dir = stressDir ?: return
-        SubmitAction.saveDocuments()
-        stressCancel.set(false)
-        stressStart.isEnabled = false
-        stopStress.isEnabled = true
-        stressSave.isEnabled = false
-        stressFailure = null
-        stressArea.text = "Compiling the solution, brute.cpp and gen.cpp…"
-        info("Stress test is running…")
-        ApplicationManager.getApplication().executeOnPooledThread {
-            val res = try {
-                TestRunner.stress(dir, 2000, 90_000, { stressCancel.get() }) { i ->
-                    if (i % 5 == 1) ApplicationManager.getApplication().invokeLater { stressArea.text = "Random test #$i: the answers are the same so far…" }
-                }
-            } catch (ex: Exception) {
-                TestRunner.StressResult(0, null, ex.message ?: ex.toString())
-            }
-            ApplicationManager.getApplication().invokeLater {
-                stressStart.isEnabled = true
-                stopStress.isEnabled = false
-                val f = res.failure
-                when {
-                    res.error != null -> { stressArea.text = res.error; info("Stress test could not run", false) }
-                    f != null -> {
-                        stressFailure = f
-                        stressSave.isEnabled = true
-                        stressArea.text = "The answers differ on random test #${f.seed} (${f.reason}).\n\n" +
-                            "Input\n${f.input}\nExpected (brute.cpp)\n${f.expected}\nYour output\n${f.actual}"
-                        info("Found a test that breaks the solution", false)
-                    }
-                    else -> {
-                        val text = if (stressCancel.get()) "Stopped after ${res.iterations} random tests: no difference found" else "${res.iterations} random tests: the solution and brute.cpp always agree"
-                        stressArea.text = text
-                        info(text, true)
-                    }
-                }
-                stressArea.caretPosition = 0
-            }
-        }
     }
 
     private fun showHistory(dir: Path) {
@@ -844,31 +761,3 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
     }
 
 }
-
-private const val STRESS_HELP = "How it works: the plugin compiles the solution, brute.cpp and gen.cpp, then repeats up to 2000 times:\n" +
-    "gen.cpp prints a random test (it gets the number of the iteration as its first argument, use it as the seed),\n" +
-    "brute.cpp and your solution answer it, and the answers are compared. The first test where they differ is shown here\n" +
-    "and can be saved with “Save as test”, so it is checked every time you press “Test on examples”."
-
-private val BRUTE_TEMPLATE = """#include <bits/stdc++.h>
-using namespace std;
-
-// A simple solution that is slow but certainly correct (try everything).
-// It reads the same input as the main solution and prints the same kind of answer.
-int main() {
-    return 0;
-}
-"""
-
-private val GEN_TEMPLATE = """#include <bits/stdc++.h>
-using namespace std;
-
-// Prints one small random test. The first argument is the seed (number of the iteration).
-// Change it to match the input format of the problem.
-int main(int argc, char** argv) {
-    mt19937 rnd(argc > 1 ? atoi(argv[1]) : 1);
-    int n = rnd() % 8 + 1;
-    cout << n << "\n";
-    for (int i = 0; i < n; i++) cout << (int)(rnd() % 20) << " \n"[i + 1 == n];
-}
-"""

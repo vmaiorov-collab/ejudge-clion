@@ -34,10 +34,6 @@ object CMakeGen {
                 val letter = Files.readAllLines(p.resolve(MARKER)).getOrNull(1) ?: p.fileName.toString()
                 val tag = "c${id}_${letter.replace(Regex("[^A-Za-z0-9_]"), "_")}"
                 sb.append("add_executable($tag \"${p.fileName}/${src.fileName}\")\n")
-                for (aux in listOf("brute", "gen")) {
-                    val f = TestRunner.auxOf(p, aux) ?: continue
-                    if (f.fileName.toString().substringAfterLast('.') in setOf("cpp", "cc", "cxx")) sb.append("add_executable(${tag}_$aux \"${p.fileName}/${f.fileName}\")\n")
-                }
             }
             Files.writeString(contest.resolve("CMakeLists.txt"), sb.toString())
             included += contest.fileName.toString()
