@@ -264,6 +264,7 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
         saveTestButton.toolTipText = "Keep this input (and the current output as the expected answer) as your own test. It runs together with the examples"
         testSubmitButton.toolTipText = "Check the examples and, if they all pass, send the solution to the server"
         historyButton.toolTipText = "All submissions of this problem with their verdicts and code"
+        historyButton.addActionListener { selectedDir()?.let { showHistory(it) } ?: info("Select a problem first") }
         historyOpen.addActionListener { openHistoryFile() }
         historyList.addListSelectionListener { if (!it.valueIsAdjusting) loadHistorySource() }
         search.document.addDocumentListener(object : DocumentListener {
@@ -328,7 +329,7 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
                 (if (r.note.isNotBlank()) "\n${r.note}" else "")
             details.caretPosition = 0
         }
-        EjudgeEvents.addListener { refresh() }
+        EjudgeEvents.addListener(project) { refresh() }
         project.messageBus.connect(project).subscribe(
             com.intellij.openapi.fileEditor.FileEditorManagerListener.FILE_EDITOR_MANAGER,
             object : com.intellij.openapi.fileEditor.FileEditorManagerListener {
@@ -534,7 +535,6 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
             <p><b>Автодополнение.</b> Файлы лежат вне вашего проекта. Чтобы заработали подсказки, один раз откройте папку <code>$dir</code> как проект (File → Open).</p>
             <p><b>Цвета задач.</b> Зелёная галочка — задача принята на сервере. Красный крестик и вердикт (WA, TL, RE…) — решение отправляли, но оно не прошло. Без значка — ещё не отправляли. Цвета обновляются кнопкой обновления и после каждой отправки.</p>
             <p><b>Другие кнопки.</b> «Test &amp; submit» отправляет решение, только если все тесты прошли. «Save as test» в окне своего ввода сохраняет тест (ответ можно вписать в нижнее поле), и он проверяется вместе с примерами (удалить: правая кнопка по тесту). «My submissions» показывает все ваши посылки и их код. Поиск над списком и правая кнопка по задаче (★ избранное) помогают найти нужную.</p>
-            <p><b>Статистика.</b> Плагин анонимно считает, сколько людей им пользуется: не передаются ни логин, ни данные контестов. Отключить можно в настройках (Settings → Tools → Ejudge).</p>
             <p>Эту подсказку всегда можно вызвать кнопкой «?» справа вверху.</p>
             </body></html>
         """.trimIndent()).apply {

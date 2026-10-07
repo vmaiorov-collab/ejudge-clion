@@ -1,6 +1,5 @@
 # Ejudge для CLion
 
-![Установок](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fabacus.jasoncameron.dev%2Fget%2Fejudge-clion-vmaiorov%2Finstalls&query=%24.value&label=%D1%83%D1%81%D1%82%D0%B0%D0%BD%D0%BE%D0%B2%D0%BE%D0%BA&cacheSeconds=300)
 ![Скачиваний](https://img.shields.io/github/downloads/vmaiorov-collab/ejudge-clion/total?label=%D1%81%D0%BA%D0%B0%D1%87%D0%B8%D0%B2%D0%B0%D0%BD%D0%B8%D0%B9)
 
 ![Ejudge в CLion](https://vmaiorov-collab.github.io/ejudge-clion/screenshot.png)
@@ -68,16 +67,10 @@ Expand-Archive -Force $env:TEMP\ejudge-clion.zip "$env:APPDATA\JetBrains\CLion20
 
 Раз в день плагин смотрит последний релиз на GitHub и сообщает в CLion, если вышла новая версия. Обновить можно той же командой установки (она перезаписывает старую версию). Плагин также добавляет в CLion свой репозиторий обновлений, поэтому в **Settings → Plugins** может появиться кнопка «Update».
 
-## Статистика
-
-Плагин анонимно считает, сколько людей им пользуется. Он не отправляет ни идентификатор, ни логин, ни данные контестов: раз при первой установке и раз в день при запуске CLion увеличиваются два публичных счётчика (`installs` и `active-<дата>`). Отключить можно в Settings → Tools → Ejudge → «Send anonymous usage statistics».
-
-Посмотреть числа: `https://abacus.jasoncameron.dev/get/ejudge-clion-vmaiorov/installs` и `.../active-ГГГГ-ММ-ДД`.
-
 ## Сборка из исходников
 
 ```
 JAVA_HOME=/path/to/CLion.app/Contents/jbr/Contents/Home ./gradlew buildPlugin
 ```
 
-Путь к локальному CLion задаётся в `build.gradle.kts` (`intellijPlatform { local(...) }`). Готовый zip появится в `build/distributions/`.
+По умолчанию Gradle сам скачает CLion 2026.2. Чтобы собирать с уже установленным CLion, добавьте `-PlocalIde=/путь/к/CLion.app`. Готовый zip появится в `build/distributions/`.

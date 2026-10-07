@@ -17,9 +17,6 @@ class EjudgeSettings : PersistentStateComponent<EjudgeSettings.Data> {
         var login: String = ""
         var onboardingDone: Boolean = false
         var contestsDir: String = "~/ejudge-contests"
-        var sendStats: Boolean = true
-        var installCounted: Boolean = false
-        var lastStatsDay: String = ""
         var lastUpdateCheck: String = ""
         var notifiedVersion: String = ""
         var favorites: MutableList<String> = mutableListOf()
