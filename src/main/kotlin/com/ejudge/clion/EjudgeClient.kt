@@ -27,7 +27,13 @@ class EjudgeException(message: String) : Exception(message)
 
 data class Problem(val name: String, val url: String, val id: String)
 data class Sample(val input: String, val output: String)
-data class Run(val id: Int, val columns: Map<String, String>) {
+data class Run(val id: Int, val columns: Map<String, String>, val links: List<Pair<String, String>> = emptyList()) {
+    /** Letter of the problem this run belongs to. */
+    val letter: String get() = columns.entries.firstOrNull { it.key.contains(Regex("задача|problem", RegexOption.IGNORE_CASE)) }
+        ?.value?.trim()?.split(' ', ':', '.')?.firstOrNull().orEmpty()
+    val accepted: Boolean get() = !inProgress && Regex("^(OK|Accepted|Полное|Принято|Зачтено)", RegexOption.IGNORE_CASE).containsMatchIn(result)
+    fun column(pattern: String): String = columns.entries.firstOrNull { it.key.contains(Regex(pattern, RegexOption.IGNORE_CASE)) }?.value.orEmpty()
+
     val result: String get() = columns.entries.firstOrNull { it.key.contains(Regex("результат|result|status", RegexOption.IGNORE_CASE)) }?.value ?: ""
     val inProgress: Boolean get() = result.isBlank() || result.contains(
         Regex("компилир|выполня|ожида|тестир|проверя|compil|running|judging|pending|waiting|queue|testing", RegexOption.IGNORE_CASE)
@@ -56,10 +62,7 @@ fun shortVerdict(r: String): String = when {
 
 /** Per problem letter: solved if any finished run was accepted, otherwise the verdict of the last finished run. */
 fun problemStates(runs: List<Run>, tabs: Map<String, String> = emptyMap()): Map<String, ProblemState> {
-    val byLetter = runs.filter { !it.inProgress }.groupBy { run ->
-        run.columns.entries.firstOrNull { it.key.contains(Regex("задача|problem", RegexOption.IGNORE_CASE)) }
-            ?.value?.trim()?.split(' ', ':', '.')?.firstOrNull().orEmpty()
-    }
+    val byLetter = runs.filter { !it.inProgress }.groupBy { it.letter }
     val fromRuns = byLetter.filterKeys { it.isNotEmpty() }.mapValues { (_, list) ->
         if (list.any { ACCEPTED.containsMatchIn(it.result) }) ProblemState(true, "OK")
         else ProblemState(false, shortVerdict(list.last().result))
@@ -144,7 +147,8 @@ class EjudgeClient(private val serverUrl: String, private val contestId: Int) {
             val parsed = rows.filter { it !== headerRow && it.select("td").size == header.size }.mapNotNull { row ->
                 val cells = row.select("td").map { it.text().trim() }
                 val id = cells.firstOrNull()?.toIntOrNull() ?: return@mapNotNull null
-                Run(id, header.zip(cells).toMap())
+                val links = row.select("a[href]").map { it.text().trim() to it.absUrl("href") }.filter { it.second.isNotBlank() }
+                Run(id, header.zip(cells).toMap(), links)
             }
             return parsed.sortedBy { it.id }
         }
@@ -166,6 +170,25 @@ class EjudgeClient(private val serverUrl: String, private val contestId: Int) {
         }
         return last
     }
+
+    /** Source code of a submitted run, from the "view source" page linked in the runs table. */
+    fun runSource(run: Run): String {
+        val link = run.links.firstOrNull { it.second.contains("action=36") }
+            ?: run.links.firstOrNull { it.first.contains(Regex("просмотр|view|исходн|source", RegexOption.IGNORE_CASE)) }
+            ?: run.links.firstOrNull { it.second.contains("run_id=") }
+            ?: throw EjudgeException("No link to the source of run #${run.id}")
+        val doc = get(URI.create(link.second))
+        val pre = doc.select("pre").maxByOrNull { it.wholeText().length }
+        if (pre == null) {
+            lastSourceHtml = doc.outerHtml()
+            throw EjudgeException("The source of run #${run.id} was not found on the page ${link.second}")
+        }
+        return pre.wholeText()
+    }
+
+    /** Raw HTML of the last "view source" page that could not be parsed. */
+    var lastSourceHtml: String = ""
+        private set
 
     fun problems(): List<Problem> {
         val seen = LinkedHashMap<String, Problem>()

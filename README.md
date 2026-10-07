@@ -5,11 +5,22 @@
 
 Плагин для CLion: импорт контестов с ejudge.algocode.ru (Яндекс Кружок), условия сбоку, запуск на примерах и на своём вводе, отправка решений и вердикты прямо в IDE.
 
+## Возможности
+
+- Импорт всех контестов параллели: условия (формулы, картинки, таблицы), примеры, шаблон решения.
+- Цвета задач: зелёная галочка — принята, красный крестик и вердикт (WA, TL…) — не принята. Счётчик «Solved 5 of 8», поиск по задачам и избранное (★, правая кнопка мыши).
+- **Test on examples**: время и память каждого запуска, предупреждение, если вы близки к лимиту из условия.
+- **Test & submit**: примеры, и если все прошли — решение уходит на сервер.
+- **Run with my input** и **Save as test**: свои тесты лежат рядом с примерами и проверяются каждый раз.
+- **Stress test**: сравнение решения с медленным `brute.cpp` на случайных тестах из `gen.cpp`, первый расходящийся тест можно сохранить.
+- **My submissions**: все посылки задачи с вердиктом и номером теста, код любой посылки открывается как файл.
+- Уведомление о новой версии плагина.
+
 ## Установка
 
 Нужен CLion 2026.2 или новее (сборка 262+).
 
-1. Скачайте `ejudge-clion-0.1.0.zip` со страницы [Releases](https://github.com/vmaiorov-collab/ejudge-clion/releases/latest). Распаковывать не нужно.
+1. Скачайте `ejudge-clion.zip` со страницы [Releases](https://github.com/vmaiorov-collab/ejudge-clion/releases/latest). Распаковывать не нужно.
 2. В CLion откройте **Settings → Plugins**, нажмите ⚙ → **Install Plugin from Disk…** и выберите zip.
 3. Нажмите **OK** и перезапустите CLion.
 4. Откройте **Settings → Tools → Ejudge**, введите логин и пароль от ejudge. Папка для контестов по умолчанию `~/ejudge-contests`.
@@ -20,7 +31,7 @@
 Закройте CLion и выполните в терминале:
 
 ```
-curl -L -o /tmp/ejudge-clion.zip https://github.com/vmaiorov-collab/ejudge-clion/releases/latest/download/ejudge-clion-0.1.0.zip \
+curl -L -o /tmp/ejudge-clion.zip https://github.com/vmaiorov-collab/ejudge-clion/releases/latest/download/ejudge-clion.zip \
   && unzip -o /tmp/ejudge-clion.zip -d "$HOME/Library/Application Support/JetBrains/CLion2026.2/plugins"
 ```
 
@@ -31,7 +42,7 @@ curl -L -o /tmp/ejudge-clion.zip https://github.com/vmaiorov-collab/ejudge-clion
 Закройте CLion и выполните в терминале:
 
 ```
-curl -L -o /tmp/ejudge-clion.zip https://github.com/vmaiorov-collab/ejudge-clion/releases/latest/download/ejudge-clion-0.1.0.zip \
+curl -L -o /tmp/ejudge-clion.zip https://github.com/vmaiorov-collab/ejudge-clion/releases/latest/download/ejudge-clion.zip \
   && unzip -o /tmp/ejudge-clion.zip -d "$HOME/.local/share/JetBrains/CLion2026.2/plugins"
 ```
 
@@ -40,7 +51,7 @@ curl -L -o /tmp/ejudge-clion.zip https://github.com/vmaiorov-collab/ejudge-clion
 Закройте CLion и выполните в PowerShell:
 
 ```
-Invoke-WebRequest https://github.com/vmaiorov-collab/ejudge-clion/releases/latest/download/ejudge-clion-0.1.0.zip -OutFile $env:TEMP\ejudge-clion.zip
+Invoke-WebRequest https://github.com/vmaiorov-collab/ejudge-clion/releases/latest/download/ejudge-clion.zip -OutFile $env:TEMP\ejudge-clion.zip
 Expand-Archive -Force $env:TEMP\ejudge-clion.zip "$env:APPDATA\JetBrains\CLion2026.2\plugins"
 ```
 
@@ -49,6 +60,10 @@ Expand-Archive -Force $env:TEMP\ejudge-clion.zip "$env:APPDATA\JetBrains\CLion20
 > **Дальше всё объяснит сам CLion.** После установки и перезапуска при первом открытии панели **Ejudge** справа появится пошаговая инструкция: как войти, скачать контесты, запускать тесты и отправлять решения. Кнопка «?» в панели показывает её снова.
 
 Для запуска тестов на компьютере должны быть `c++` (на macOS ставится командой `xcode-select --install`) и `python3`.
+
+## Обновление
+
+Раз в день плагин смотрит последний релиз на GitHub и сообщает в CLion, если вышла новая версия. Обновить можно той же командой установки (она перезаписывает старую версию). Плагин также добавляет в CLion свой репозиторий обновлений, поэтому в **Settings → Plugins** может появиться кнопка «Update».
 
 ## Статистика
 

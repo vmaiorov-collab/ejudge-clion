@@ -124,7 +124,8 @@ class ImportContestAction : AnAction() {
             indicator.text2 = "Problem ${p.name}"
             val dir = root.resolve(p.name.replace(Regex("[^\\w.-]"), "_"))
             Files.createDirectories(dir.resolve("tests"))
-            Files.list(dir.resolve("tests")).use { it.toList() }.forEach { Files.deleteIfExists(it) }
+            // only the examples are replaced; own tests (uN.*) stay
+            Files.list(dir.resolve("tests")).use { it.toList() }.filter { it.fileName.toString().matches(Regex("\\d+\\.(in|out)")) }.forEach { Files.deleteIfExists(it) }
             val st = client.statement(p)
             val body = statementBody(st)
             StatementImages.localize(client, body, dir)

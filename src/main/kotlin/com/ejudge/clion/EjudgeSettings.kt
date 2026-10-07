@@ -20,6 +20,9 @@ class EjudgeSettings : PersistentStateComponent<EjudgeSettings.Data> {
         var sendStats: Boolean = true
         var installCounted: Boolean = false
         var lastStatsDay: String = ""
+        var lastUpdateCheck: String = ""
+        var notifiedVersion: String = ""
+        var favorites: MutableList<String> = mutableListOf()
     }
 
     private var data = Data()

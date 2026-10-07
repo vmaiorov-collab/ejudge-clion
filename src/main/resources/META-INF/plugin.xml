@@ -13,6 +13,7 @@
         <toolWindow id="Ejudge" anchor="right" factoryClass="com.ejudge.clion.EjudgeToolWindowFactory"/>
         <toolWindow id="Ejudge Statement" anchor="left" secondary="false" factoryClass="com.ejudge.clion.StatementToolWindowFactory"/>
         <postStartupActivity implementation="com.ejudge.clion.UsageStats"/>
+        <postStartupActivity implementation="com.ejudge.clion.UpdateCheck"/>
         <notificationGroup id="Ejudge" displayType="BALLOON"/>
     </extensions>
 

@@ -19,6 +19,7 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
+import com.intellij.ui.components.JBTextField
 import com.intellij.ui.content.ContentFactory
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
@@ -38,6 +39,12 @@ import javax.swing.JComponent
 import javax.swing.JEditorPane
 import javax.swing.JList
 import javax.swing.JPanel
+import javax.swing.JPopupMenu
+import javax.swing.JMenuItem
+import javax.swing.JToggleButton
+import javax.swing.event.DocumentEvent
+import javax.swing.event.DocumentListener
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.text.html.HTMLEditorKit
 
 class EjudgeToolWindowFactory : ToolWindowFactory, DumbAware {
@@ -89,15 +96,52 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
     private var lockUntil = 0L
     private val collapseButton = JButton(AllIcons.General.ArrowDown).apply { toolTipText = "Hide the results area" }
     private var pendingSelect: Path? = null
+    private var allProblems: List<ProblemDir> = emptyList()
+    private var filtering = 0
+    private val search = JBTextField().apply { emptyText.text = "Search problems" }
+    private val favOnly = JToggleButton(AllIcons.Nodes.Favorite).apply { toolTipText = "Show only favorite problems" }
+    private val summary = JBLabel(" ").apply { foreground = UIUtil.getContextHelpForeground() }
+    private var lastRunOk = false
+    private var lastRunInput = ""
+    private val saveTestButton = JButton("Save as test", AllIcons.Actions.MenuSaveall)
+    private val stressArea = JBTextArea().apply {
+        isEditable = false
+        font = Font(Font.MONOSPACED, Font.PLAIN, JBUI.scaleFontSize(12f))
+        margin = JBUI.insets(8)
+    }
+    private val stressStart = JButton("Run", AllIcons.Actions.Execute)
+    private val stopStress = JButton("Stop", AllIcons.Actions.Suspend).apply { isEnabled = false }
+    private val stressSave = JButton("Save as test", AllIcons.Actions.MenuSaveall).apply { isEnabled = false }
+    private val stressCancel = AtomicBoolean(false)
+    private var stressFailure: TestRunner.StressFailure? = null
+    private var stressDir: Path? = null
+    private val historyModel = DefaultListModel<Run>()
+    private val historyList = JBList(historyModel)
+    private val historyCode = JBTextArea().apply {
+        isEditable = false
+        font = Font(Font.MONOSPACED, Font.PLAIN, JBUI.scaleFontSize(12f))
+        margin = JBUI.insets(8)
+    }
+    private val historyOpen = JButton("Open as file", AllIcons.Actions.MenuOpen).apply { isEnabled = false }
+    private var historyDir: Path? = null
+    private var historyClient: EjudgeClient? = null
+    private var historyText = ""
 
     init {
         val importButton = JButton("Import contest", AllIcons.Actions.Download)
         val refreshButton = JButton(AllIcons.Actions.Refresh).apply { toolTipText = "Refresh" }
         collapseButton.addActionListener { setBottomVisible(!cards.isVisible) }
-        val top = JPanel(BorderLayout(JBUI.scale(6), 0)).apply {
+        val top = JPanel(BorderLayout(0, JBUI.scale(6))).apply {
             border = JBUI.Borders.empty(8)
-            add(contests, BorderLayout.CENTER)
-            add(topButtons.apply { add(importButton); add(refreshButton); add(collapseButton) }, BorderLayout.EAST)
+            add(JPanel(BorderLayout(JBUI.scale(6), 0)).apply {
+                add(contests, BorderLayout.CENTER)
+                add(topButtons.apply { add(importButton); add(refreshButton); add(collapseButton) }, BorderLayout.EAST)
+            }, BorderLayout.NORTH)
+            add(JPanel(BorderLayout(JBUI.scale(6), 0)).apply {
+                add(search, BorderLayout.CENTER)
+                add(favOnly, BorderLayout.EAST)
+            }, BorderLayout.CENTER)
+            add(summary, BorderLayout.SOUTH)
         }
 
         problemList.emptyText.text = "No problems yet"
@@ -114,6 +158,7 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
                     else -> AllIcons.RunConfigurations.TestFailed
                 }
                 val letterColor = when { st == null -> null; st.solved -> green; else -> red }
+                if (isFavorite(value)) append("★ ", SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, JBColor(0xE6A100, 0xF2C94C)))
                 append(value.letter, if (letterColor == null) SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES else SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, letterColor))
                 if (value.title.isNotBlank()) append("   ${value.title}", SimpleTextAttributes.REGULAR_ATTRIBUTES)
                 if (st != null && !st.solved) append("   ${st.verdict}", SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, red))
@@ -123,19 +168,24 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
         resultList.cellRenderer = object : ColoredListCellRenderer<TestResult>() {
             override fun customizeCellRenderer(list: JList<out TestResult>, value: TestResult, index: Int, selected: Boolean, hasFocus: Boolean) {
                 border = JBUI.Borders.empty(3, 8)
-                append("Test ${value.name}", SimpleTextAttributes.REGULAR_ATTRIBUTES)
+                append(if (value.custom) "My test ${value.name}" else "Test ${value.name}", SimpleTextAttributes.REGULAR_ATTRIBUTES)
                 val color = if (value.ok) JBColor(0x2E8B57, 0x62B543) else JBColor(0xD0312D, 0xFF6B68)
                 append("   ${value.verdict}", SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, color))
-                append("   ${value.ms} ms", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                append("   ${value.ms} ms" + (if (value.kb > 0) " · ${memText(value.kb)}" else ""), SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                if (value.warn.isNotBlank()) append("   ⚠ ${value.warn}", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, JBColor(0xC77700, 0xE0A030)))
             }
         }
 
         val statementButton = JButton("Show statement", AllIcons.Actions.Preview)
         val submitButton = JButton("Submit", AllIcons.Actions.Upload)
         val runButton = JButton("Run with my input", AllIcons.Actions.Lightning)
-        val actions = JPanel(GridLayout(2, 2, JBUI.scale(6), JBUI.scale(6))).apply {
+        val testSubmitButton = JButton("Test & submit", AllIcons.Actions.Commit)
+        val stressButton = JButton("Stress test", AllIcons.Actions.Rerun)
+        val historyButton = JButton("My submissions", AllIcons.Vcs.History)
+        val actions = JPanel(GridLayout(0, 2, JBUI.scale(6), JBUI.scale(6))).apply {
             border = JBUI.Borders.empty(8)
-            add(testButton); add(runButton); add(statementButton); add(submitButton)
+            add(testButton); add(testSubmitButton); add(runButton); add(stressButton)
+            add(statementButton); add(submitButton); add(historyButton)
         }
         val problemPane = JPanel(BorderLayout()).apply {
             add(JBScrollPane(problemList), BorderLayout.CENTER)
@@ -147,7 +197,7 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
             inputArea.registerKeyboardAction({ executeRun() }, javax.swing.KeyStroke.getKeyStroke(key), javax.swing.JComponent.WHEN_FOCUSED)
         }
         cards.add(JPanel(BorderLayout()).apply {
-            add(JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(6), JBUI.scale(4))).apply { add(runNowButton); add(JBLabel("Input → Output")) }, BorderLayout.NORTH)
+            add(JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(6), JBUI.scale(4))).apply { add(runNowButton); add(saveTestButton); add(JBLabel("Input → Output")) }, BorderLayout.NORTH)
             add(JBSplitter(true, 0.5f).apply {
                 firstComponent = JBScrollPane(inputArea)
                 secondComponent = JBScrollPane(outputArea)
@@ -157,6 +207,36 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
             firstComponent = JBScrollPane(resultList)
             secondComponent = JBScrollPane(details)
         }, "tests")
+        cards.add(JPanel(BorderLayout()).apply {
+            add(JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(6), JBUI.scale(4))).apply {
+                add(stressStart); add(stopStress); add(stressSave)
+                add(JBLabel("brute.cpp = slow correct solution, gen.cpp = random test generator"))
+            }, BorderLayout.NORTH)
+            add(JBScrollPane(stressArea), BorderLayout.CENTER)
+        }, "stress")
+        historyList.emptyText.text = "No submissions of this problem yet"
+        historyList.cellRenderer = object : ColoredListCellRenderer<Run>() {
+            override fun customizeCellRenderer(list: JList<out Run>, value: Run, index: Int, selected: Boolean, hasFocus: Boolean) {
+                border = JBUI.Borders.empty(3, 8)
+                append("#${value.id}", SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
+                val color = when { value.inProgress -> JBColor.GRAY; value.accepted -> JBColor(0x2E8B57, 0x62B543); else -> JBColor(0xD0312D, 0xFF6B68) }
+                append("   ${value.result.ifBlank { "…" }}", SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, color))
+                val test = value.column("тест|test")
+                if (test.isNotBlank() && !value.accepted) append("  test $test", SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, color))
+                val rest = listOf("язык|lang", "врем|time|дата|date").map { value.column(it) }.filter { it.isNotBlank() }.joinToString(" · ")
+                if (rest.isNotBlank()) append("   $rest", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+            }
+        }
+        cards.add(JBSplitter(false, 0.38f).apply {
+            firstComponent = JBScrollPane(historyList)
+            secondComponent = JPanel(BorderLayout()).apply {
+                add(JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(6), JBUI.scale(4))).apply {
+                    add(historyOpen)
+                    add(JBLabel("The code that was sent to the server"))
+                }, BorderLayout.NORTH)
+                add(JBScrollPane(historyCode), BorderLayout.CENTER)
+            }
+        }, "history")
 
         body.apply {
             firstComponent = problemPane
@@ -182,7 +262,69 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
         contests.addActionListener { loadProblems() }
         statementButton.addActionListener { selectedDir()?.let { StatementPanel.get(project).autoShow = true; showStatement(it) } ?: info("Select a problem first") }
         runButton.addActionListener { selectedDir()?.let { showRunCard(it) } ?: info("Select a problem first") }
-        testButton.addActionListener { selectedDir()?.let { runTests(it) } ?: info("Select a problem first") }
+        testButton.addActionListener { selectedDir()?.let { runTests(it, thenSubmit = false) } ?: info("Select a problem first") }
+        testSubmitButton.addActionListener { selectedDir()?.let { runTests(it, thenSubmit = true) } ?: info("Select a problem first") }
+        stressButton.addActionListener { selectedDir()?.let { showStress(it) } ?: info("Select a problem first") }
+        historyButton.addActionListener { selectedDir()?.let { showHistory(it) } ?: info("Select a problem first") }
+        stressStart.addActionListener { startStress() }
+        stopStress.addActionListener { stressCancel.set(true) }
+        stressSave.addActionListener {
+            val f = stressFailure; val d = stressDir
+            if (f != null && d != null) {
+                val name = TestRunner.saveCustomTest(d, f.input, f.expected)
+                info("Saved as test $name. It runs together with the examples", true)
+                stressSave.isEnabled = false
+            }
+        }
+        saveTestButton.addActionListener { saveRunAsTest() }
+        saveTestButton.toolTipText = "Keep this input (and the current output as the expected answer) as your own test. It runs together with the examples"
+        stressButton.toolTipText = "Compare the solution with a slow brute-force solution on random tests"
+        testSubmitButton.toolTipText = "Check the examples and, if they all pass, send the solution to the server"
+        historyButton.toolTipText = "All submissions of this problem with their verdicts and code"
+        historyOpen.addActionListener { openHistoryFile() }
+        historyList.addListSelectionListener { if (!it.valueIsAdjusting) loadHistorySource() }
+        search.document.addDocumentListener(object : DocumentListener {
+            override fun insertUpdate(e: DocumentEvent) = applyFilter()
+            override fun removeUpdate(e: DocumentEvent) = applyFilter()
+            override fun changedUpdate(e: DocumentEvent) = applyFilter()
+        })
+        favOnly.addActionListener { applyFilter() }
+        problemList.componentPopupMenu = null
+        problemList.addMouseListener(object : MouseAdapter() {
+            override fun mousePressed(e: MouseEvent) = popup(e)
+            override fun mouseReleased(e: MouseEvent) = popup(e)
+            private fun popup(e: MouseEvent) {
+                if (!e.isPopupTrigger) return
+                val i = problemList.locationToIndex(e.point)
+                if (i < 0) return
+                val p = problems[i]
+                problemList.selectedIndex = i
+                val item = JMenuItem(if (isFavorite(p)) "Remove from favorites" else "Add to favorites", AllIcons.Nodes.Favorite)
+                item.addActionListener { toggleFavorite(p) }
+                JPopupMenu().apply { add(item) }.show(problemList, e.x, e.y)
+            }
+        })
+        resultList.addMouseListener(object : MouseAdapter() {
+            override fun mousePressed(e: MouseEvent) = popup(e)
+            override fun mouseReleased(e: MouseEvent) = popup(e)
+            private fun popup(e: MouseEvent) {
+                if (!e.isPopupTrigger) return
+                val i = resultList.locationToIndex(e.point)
+                if (i < 0) return
+                val r = results[i]
+                if (!r.custom) return
+                resultList.selectedIndex = i
+                val item = JMenuItem("Delete this test", AllIcons.Actions.GC)
+                item.addActionListener {
+                    r.file?.let { f ->
+                        Files.deleteIfExists(f)
+                        Files.deleteIfExists(f.resolveSibling(f.fileName.toString().removeSuffix(".in") + ".out"))
+                    }
+                    results.removeElement(r)
+                }
+                JPopupMenu().apply { add(item) }.show(resultList, e.x, e.y)
+            }
+        })
         submitButton.addActionListener {
             selectedSource()?.let { SubmitAction.submitFile(project, it) } ?: info("Select a problem first")
         }
@@ -192,7 +334,7 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
             }
         })
         problemList.addListSelectionListener {
-            if (it.valueIsAdjusting) return@addListSelectionListener
+            if (it.valueIsAdjusting || filtering > 0) return@addListSelectionListener
             saveRunInput()
             results.clear()
             details.text = ""
@@ -257,15 +399,16 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
                 ProblemDir(dir, letter, titleOf(dir))
             }
             ApplicationManager.getApplication().invokeLater {
-                problems.clear()
-                list.forEach { problems.addElement(it) }
+                states.clear()
+                allProblems = list
+                applyFilter(null)
                 val target = pendingSelect ?: editorProblem()
-                val want = target?.let { w -> list.indexOfFirst { it.dir == w } } ?: -1
+                val want = target?.let { w -> (0 until problems.size()).firstOrNull { problems[it].dir == w } } ?: -1
                 pendingSelect = null
                 loadStates(list)
                 programmatic++
                 try {
-                    if (want >= 0) problemList.selectedIndex = want else if (list.isNotEmpty()) problemList.selectedIndex = 0
+                    if (want >= 0) problemList.selectedIndex = want else if (problems.size() > 0) problemList.selectedIndex = 0
                 } finally { programmatic-- }
             }
         }
@@ -284,8 +427,8 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
                 val runs = client.runs()
                 val fresh = problemStates(runs, client.tabClasses())
                 ApplicationManager.getApplication().invokeLater {
-                    if (problems.size() > 0 && problems[0].dir.parent == first.dir.parent) {
-                        states.clear(); states.putAll(fresh); problemList.repaint()
+                    if (allProblems.isNotEmpty() && allProblems[0].dir.parent == first.dir.parent) {
+                        states.clear(); states.putAll(fresh); problemList.repaint(); updateSummary()
                     }
                 }
             } catch (ex: Exception) {
@@ -293,6 +436,43 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
             }
         }
     }
+
+    private fun isFavorite(p: ProblemDir) = p.dir.toString() in EjudgeSettings.getInstance().state.favorites
+
+    private fun toggleFavorite(p: ProblemDir) {
+        val fav = EjudgeSettings.getInstance().state.favorites
+        if (!fav.remove(p.dir.toString())) fav.add(p.dir.toString())
+        applyFilter()
+    }
+
+    /** Shows the problems that match the search text and the favorites switch, keeping the selection if possible. */
+    private fun applyFilter(keep: Path? = selectedDir()) {
+        val q = search.text.trim().lowercase()
+        val shown = allProblems.filter {
+            (q.isEmpty() || it.letter.lowercase().contains(q) || it.title.lowercase().contains(q)) && (!favOnly.isSelected || isFavorite(it))
+        }
+        filtering++
+        try {
+            problems.clear()
+            shown.forEach { problems.addElement(it) }
+            val idx = shown.indexOfFirst { it.dir == keep }
+            if (idx >= 0) problemList.selectedIndex = idx
+        } finally {
+            filtering--
+        }
+        updateSummary()
+    }
+
+    private fun updateSummary() {
+        val solved = allProblems.count { states[it.letter]?.solved == true }
+        summary.text = when {
+            allProblems.isEmpty() -> " "
+            states.isEmpty() -> "${allProblems.size} problems"
+            else -> "Solved $solved of ${allProblems.size}"
+        }
+    }
+
+    private fun memText(kb: Long) = if (kb >= 1024) "${kb / 1024} MB" else "$kb KB"
 
     private fun titleOf(dir: Path): String = try {
         val doc = Jsoup.parse(Files.readString(dir.resolve("statement.html")))
@@ -375,6 +555,7 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
             </ol>
             <p><b>Автодополнение.</b> Файлы лежат вне вашего проекта. Чтобы заработали подсказки, один раз откройте папку <code>$dir</code> как проект (File → Open).</p>
             <p><b>Цвета задач.</b> Зелёная галочка — задача принята на сервере. Красный крестик и вердикт (WA, TL, RE…) — решение отправляли, но оно не прошло. Без значка — ещё не отправляли. Цвета обновляются кнопкой обновления и после каждой отправки.</p>
+            <p><b>Другие кнопки.</b> «Test &amp; submit» отправляет решение, только если все тесты прошли. «Save as test» в окне своего ввода сохраняет тест, и он проверяется вместе с примерами (удалить: правая кнопка по тесту). «Stress test» создаёт <code>brute.cpp</code> (медленное верное решение) и <code>gen.cpp</code> (случайный тест) и ищет ввод, на котором ответы разошлись. «My submissions» показывает все ваши посылки и их код. Поиск над списком и правая кнопка по задаче (★ избранное) помогают найти нужную.</p>
             <p><b>Статистика.</b> Плагин анонимно считает, сколько людей им пользуется: не передаются ни логин, ни данные контестов. Отключить можно в настройках (Settings → Tools → Ejudge).</p>
             <p>Эту подсказку всегда можно вызвать кнопкой «?» справа вверху.</p>
             </body></html>
@@ -431,6 +612,8 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
         val dir = runDir ?: return
         savedInputs[dir] = inputArea.text
         val input = inputArea.text
+        lastRunInput = input
+        lastRunOk = false
         SubmitAction.saveDocuments()
         outputArea.text = ""
         runNowButton.isEnabled = false
@@ -445,6 +628,7 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
             }
             ApplicationManager.getApplication().invokeLater {
                 runNowButton.isEnabled = true
+                lastRunOk = result.second
                 outputArea.text = result.first
                 outputArea.caretPosition = 0
                 info(if (result.second) "Finished" else "Failed", result.second)
@@ -452,7 +636,7 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
         }
     }
 
-    private fun runTests(dir: Path) {
+    private fun runTests(dir: Path, thenSubmit: Boolean) {
         SubmitAction.saveDocuments()
         results.clear()
         details.text = ""
@@ -480,10 +664,211 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
                     details.text = error
                     info("Could not run the tests", false)
                 } else {
-                    info(if (okCount == total) "All $total tests passed" else "$okCount of $total tests passed", okCount == total)
+                    val allOk = okCount == total
                     (0 until results.size()).firstOrNull { !results[it].ok }?.let { resultList.selectedIndex = it }
+                    if (!thenSubmit) {
+                        info(if (allOk) "All $total tests passed" else "$okCount of $total tests passed", allOk)
+                    } else if (allOk) {
+                        info("All $total tests passed, submitting…", true)
+                        TestRunner.sourceOf(dir)?.let { SubmitAction.submitFile(project, it) }
+                    } else {
+                        info("Not submitted: $okCount of $total tests passed. Fix the solution first", false)
+                    }
                 }
             }
         }
     }
+
+    private fun saveRunAsTest() {
+        val dir = runDir ?: return
+        val input = inputArea.text
+        if (input.isBlank()) { info("Type an input first", false); return }
+        val out = if (lastRunOk && input == lastRunInput) outputArea.text else null
+        val name = TestRunner.saveCustomTest(dir, input, out)
+        info(
+            if (out.isNullOrBlank()) "Saved as test $name (no expected answer yet: run the program first to keep its output)"
+            else "Saved as test $name. It runs together with the examples", true
+        )
+    }
+
+    private fun showStress(dir: Path) {
+        stressDir = dir
+        stressFailure = null
+        stressSave.isEnabled = false
+        val created = mutableListOf<Path>()
+        if (TestRunner.auxOf(dir, "brute") == null) {
+            val f = dir.resolve("brute.cpp")
+            Files.writeString(f, BRUTE_TEMPLATE); created.add(f)
+        }
+        if (TestRunner.auxOf(dir, "gen") == null) {
+            val f = dir.resolve("gen.cpp")
+            Files.writeString(f, GEN_TEMPLATE); created.add(f)
+        }
+        (cards.layout as CardLayout).show(cards, "stress")
+        setBottomVisible(true)
+        body.proportion = 0.42f
+        if (created.isEmpty()) {
+            stressArea.text = STRESS_HELP
+        } else {
+            stressArea.text = "Created ${created.joinToString { it.fileName.toString() }} next to your solution and opened it.\n\n" +
+                "1. In brute.cpp write a simple solution that is slow but certainly correct.\n" +
+                "2. In gen.cpp make the generator print one small random test.\n" +
+                "3. Press “Run”.\n\n" + STRESS_HELP
+            val root = EjudgeSettings.getInstance().contestsPath()
+            ApplicationManager.getApplication().executeOnPooledThread { try { CMakeGen.generate(root) } catch (_: Exception) {} }
+            created.forEach { open(it) }
+        }
+    }
+
+    private fun startStress() {
+        val dir = stressDir ?: return
+        SubmitAction.saveDocuments()
+        stressCancel.set(false)
+        stressStart.isEnabled = false
+        stopStress.isEnabled = true
+        stressSave.isEnabled = false
+        stressFailure = null
+        stressArea.text = "Compiling the solution, brute.cpp and gen.cpp…"
+        info("Stress test is running…")
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val res = try {
+                TestRunner.stress(dir, 2000, 90_000, { stressCancel.get() }) { i ->
+                    if (i % 5 == 1) ApplicationManager.getApplication().invokeLater { stressArea.text = "Random test #$i: the answers are the same so far…" }
+                }
+            } catch (ex: Exception) {
+                TestRunner.StressResult(0, null, ex.message ?: ex.toString())
+            }
+            ApplicationManager.getApplication().invokeLater {
+                stressStart.isEnabled = true
+                stopStress.isEnabled = false
+                val f = res.failure
+                when {
+                    res.error != null -> { stressArea.text = res.error; info("Stress test could not run", false) }
+                    f != null -> {
+                        stressFailure = f
+                        stressSave.isEnabled = true
+                        stressArea.text = "The answers differ on random test #${f.seed} (${f.reason}).\n\n" +
+                            "Input\n${f.input}\nExpected (brute.cpp)\n${f.expected}\nYour output\n${f.actual}"
+                        info("Found a test that breaks the solution", false)
+                    }
+                    else -> {
+                        val text = if (stressCancel.get()) "Stopped after ${res.iterations} random tests: no difference found" else "${res.iterations} random tests: the solution and brute.cpp always agree"
+                        stressArea.text = text
+                        info(text, true)
+                    }
+                }
+                stressArea.caretPosition = 0
+            }
+        }
+    }
+
+    private fun showHistory(dir: Path) {
+        historyDir = dir
+        historyModel.clear()
+        historyOpen.isEnabled = false
+        historyCode.text = "Loading the submissions…"
+        (cards.layout as CardLayout).show(cards, "history")
+        setBottomVisible(true)
+        body.proportion = 0.42f
+        val lines = Files.readAllLines(dir.resolve(MARKER))
+        val letter = lines.getOrNull(1) ?: return
+        val contestId = lines.getOrNull(2)?.trim()?.toIntOrNull() ?: return
+        val s = EjudgeSettings.getInstance()
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                val client = EjudgeClient(s.state.serverUrl, contestId)
+                client.login(s.state.login, s.password)
+                val runs = client.runs().filter { it.letter == letter }.sortedByDescending { it.id }
+                ApplicationManager.getApplication().invokeLater {
+                    if (historyDir != dir) return@invokeLater
+                    historyClient = client
+                    runs.forEach { historyModel.addElement(it) }
+                    historyCode.text = if (runs.isEmpty()) "You have not submitted this problem yet" else "Select a submission to see its code"
+                    if (runs.isNotEmpty()) historyList.selectedIndex = 0
+                }
+            } catch (ex: Exception) {
+                ApplicationManager.getApplication().invokeLater { historyCode.text = "Could not load the submissions: ${ex.message}" }
+            }
+        }
+    }
+
+    private fun loadHistorySource() {
+        val run = historyList.selectedValue ?: return
+        val client = historyClient ?: return
+        historyOpen.isEnabled = false
+        historyCode.text = "Loading the code of #${run.id}…"
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val result = try {
+                client.runSource(run)
+            } catch (ex: Exception) {
+                try {
+                    val dump = EjudgeSettings.getInstance().contestsPath().resolve("debug-source.html")
+                    Files.createDirectories(dump.parent)
+                    Files.writeString(dump, client.lastSourceHtml)
+                } catch (_: Exception) {}
+                null to (ex.message ?: ex.toString())
+            }
+            ApplicationManager.getApplication().invokeLater {
+                if (historyList.selectedValue?.id != run.id) return@invokeLater
+                if (result is String) {
+                    historyText = result
+                    historyCode.text = result
+                    historyOpen.isEnabled = true
+                } else {
+                    historyText = ""
+                    historyCode.text = "Could not load the code: ${(result as Pair<*, *>).second}"
+                }
+                historyCode.caretPosition = 0
+            }
+        }
+    }
+
+    private fun openHistoryFile() {
+        val dir = historyDir ?: return
+        val run = historyList.selectedValue ?: return
+        if (historyText.isEmpty()) return
+        val lang = run.column("язык|lang").lowercase()
+        val ext = when {
+            lang.contains("python") || lang.contains("pypy") -> "py"
+            lang.contains("g++") || lang.contains("c++") -> "cpp"
+            lang.contains("java") && !lang.contains("script") -> "java"
+            lang.contains("kotlin") -> "kt"
+            lang.contains("rust") -> "rs"
+            lang.contains("gcc") || lang.trim() == "c" -> "c"
+            else -> TestRunner.sourceOf(dir)?.fileName?.toString()?.substringAfterLast('.') ?: "cpp"
+        }
+        val f = dir.resolve("history").resolve("run${run.id}.$ext")
+        Files.createDirectories(f.parent)
+        Files.writeString(f, historyText)
+        open(f)
+    }
+
 }
+
+private const val STRESS_HELP = "How it works: the plugin compiles the solution, brute.cpp and gen.cpp, then repeats up to 2000 times:\n" +
+    "gen.cpp prints a random test (it gets the number of the iteration as its first argument, use it as the seed),\n" +
+    "brute.cpp and your solution answer it, and the answers are compared. The first test where they differ is shown here\n" +
+    "and can be saved with “Save as test”, so it is checked every time you press “Test on examples”."
+
+private val BRUTE_TEMPLATE = """#include <bits/stdc++.h>
+using namespace std;
+
+// A simple solution that is slow but certainly correct (try everything).
+// It reads the same input as the main solution and prints the same kind of answer.
+int main() {
+    return 0;
+}
+"""
+
+private val GEN_TEMPLATE = """#include <bits/stdc++.h>
+using namespace std;
+
+// Prints one small random test. The first argument is the seed (number of the iteration).
+// Change it to match the input format of the problem.
+int main(int argc, char** argv) {
+    mt19937 rnd(argc > 1 ? atoi(argv[1]) : 1);
+    int n = rnd() % 8 + 1;
+    cout << n << "\n";
+    for (int i = 0; i < n; i++) cout << (int)(rnd() % 20) << " \n"[i + 1 == n];
+}
+"""
