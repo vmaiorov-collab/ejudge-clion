@@ -329,7 +329,7 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
                 (if (r.note.isNotBlank()) "\n${r.note}" else "")
             details.caretPosition = 0
         }
-        EjudgeEvents.addListener { refresh() }
+        EjudgeEvents.addListener(project) { refresh() }
         project.messageBus.connect(project).subscribe(
             com.intellij.openapi.fileEditor.FileEditorManagerListener.FILE_EDITOR_MANAGER,
             object : com.intellij.openapi.fileEditor.FileEditorManagerListener {

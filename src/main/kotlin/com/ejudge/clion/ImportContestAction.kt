@@ -22,7 +22,13 @@ internal const val MARKER = ".ejudge"
 
 object EjudgeEvents {
     private val listeners = java.util.concurrent.CopyOnWriteArrayList<() -> Unit>()
-    fun addListener(l: () -> Unit) = listeners.add(l)
+
+    /** Adds [l] until [parent] is disposed, so closed projects do not keep their panels alive. */
+    fun addListener(parent: com.intellij.openapi.Disposable, l: () -> Unit) {
+        listeners.add(l)
+        com.intellij.openapi.util.Disposer.register(parent) { listeners.remove(l) }
+    }
+
     fun fireChanged() = listeners.forEach { it() }
 }
 
