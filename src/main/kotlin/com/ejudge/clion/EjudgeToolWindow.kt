@@ -264,6 +264,7 @@ private class EjudgePanel(private val project: Project) : JPanel(CardLayout()) {
         saveTestButton.toolTipText = "Keep this input (and the current output as the expected answer) as your own test. It runs together with the examples"
         testSubmitButton.toolTipText = "Check the examples and, if they all pass, send the solution to the server"
         historyButton.toolTipText = "All submissions of this problem with their verdicts and code"
+        historyButton.addActionListener { selectedDir()?.let { showHistory(it) } ?: info("Select a problem first") }
         historyOpen.addActionListener { openHistoryFile() }
         historyList.addListSelectionListener { if (!it.valueIsAdjusting) loadHistorySource() }
         search.document.addDocumentListener(object : DocumentListener {
