@@ -67,7 +67,7 @@ class StatementPanel private constructor(private val project: Project) : JPanel(
         if (!Files.exists(f)) return
         try {
             val content = statementBody(Jsoup.parse(Files.readString(f)))
-            content.select(".math").forEach { it.html(readable(org.jsoup.nodes.Entities.escape(it.text()))) }
+            content.select(".math").forEach { it.html(TexText.toHtml(it.text())) }
             statementHtml = content.html()
             title.text = dir.fileName.toString()
             render()
@@ -93,21 +93,6 @@ class StatementPanel private constructor(private val project: Project) : JPanel(
         }
         html.text = "<html><body>$statementHtml</body></html>"
         html.caretPosition = 0
-    }
-
-    /** Turns TeX fragments like \(10^6 \le n\) into plain readable text with sub/superscripts. */
-    private fun readable(src: String): String {
-        val symbols = mapOf(
-            "\\le" to "≤", "\\leq" to "≤", "\\ge" to "≥", "\\geq" to "≥", "\\ne" to "≠", "\\neq" to "≠",
-            "\\cdot" to "·", "\\times" to "×", "\\ldots" to "…", "\\dots" to "…", "\\lt" to "<", "\\gt" to ">",
-            "\\to" to "→", "\\infty" to "∞", "\\sum" to "∑", "\\in" to "∈", "\\pm" to "±",
-        )
-        var out = src.replace(Regex("""\\[,;! ]"""), " ").replace(Regex("""\\\(|\\\)|\\\[|\\]"""), "")
-        for ((k, v) in symbols) out = out.replace(Regex(Regex.escape(k) + "(?![A-Za-z])"), v)
-        out = out.replace(Regex("""\\(?:mathrm|text|mathit|operatorname)\{([^}]*)}"""), "$1")
-        out = out.replace(Regex("""\^\{([^}]*)}"""), "<sup>$1</sup>").replace(Regex("""\^([A-Za-z0-9])"""), "<sup>$1</sup>")
-        out = out.replace(Regex("""_\{([^}]*)}"""), "<sub>$1</sub>").replace(Regex("""_([A-Za-z0-9])"""), "<sub>$1</sub>")
-        return out
     }
 
     companion object {
