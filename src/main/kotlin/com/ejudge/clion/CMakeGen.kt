@@ -18,7 +18,7 @@ object CMakeGen {
     fun generate(root: Path) {
         if (!Files.isDirectory(root)) return
         Files.createDirectories(root.resolve(".include/bits"))
-        Files.writeString(root.resolve(".include/bits/stdc++.h"), STDCPP_SHIM)
+        writeIfChanged(root.resolve(".include/bits/stdc++.h"), STDCPP_SHIM)
         val contests = Files.list(root).use { s ->
             s.filter { Files.isDirectory(it) && !it.fileName.toString().startsWith(".") }.sorted().toList()
         }
@@ -35,7 +35,7 @@ object CMakeGen {
                 val tag = "c${id}_${letter.replace(Regex("[^A-Za-z0-9_]"), "_")}"
                 sb.append("add_executable($tag \"${p.fileName}/${src.fileName}\")\n")
             }
-            Files.writeString(contest.resolve("CMakeLists.txt"), sb.toString())
+            writeIfChanged(contest.resolve("CMakeLists.txt"), sb.toString())
             included += contest.fileName.toString()
         }
         val rootText = StringBuilder(
@@ -43,6 +43,12 @@ object CMakeGen {
                 "set(CMAKE_CXX_STANDARD 17)\nset(CMAKE_CXX_STANDARD_REQUIRED ON)\n"
         )
         included.forEach { rootText.append("add_subdirectory(\"$it\")\n") }
-        Files.writeString(root.resolve("CMakeLists.txt"), rootText.toString())
+        writeIfChanged(root.resolve("CMakeLists.txt"), rootText.toString())
+    }
+
+    /** Rewriting an unchanged CMakeLists.txt still bumps its timestamp and makes CLion reload the project. */
+    private fun writeIfChanged(file: Path, text: String) {
+        val old = try { Files.readString(file) } catch (_: Exception) { null }
+        if (old != text) Files.writeString(file, text)
     }
 }
