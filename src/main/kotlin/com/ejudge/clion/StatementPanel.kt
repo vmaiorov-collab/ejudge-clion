@@ -24,7 +24,9 @@ import java.util.concurrent.ConcurrentHashMap
 import javax.swing.JButton
 import javax.swing.JEditorPane
 import javax.swing.JPanel
+import javax.swing.text.html.HTMLDocument
 import javax.swing.text.html.HTMLEditorKit
+import javax.swing.text.html.StyleSheet
 
 /** Problem statement shown in its own tool window on the left side of the IDE. */
 class StatementToolWindowFactory : ToolWindowFactory, DumbAware {
@@ -132,17 +134,22 @@ class StatementPanel private constructor(private val project: Project) : JPanel(
     private fun render() {
         val fg = ColorUtil.toHex(UIUtil.getLabelForeground())
         val codeBg = ColorUtil.toHex(UIUtil.getPanelBackground().let { if (JBColor.isBright()) ColorUtil.darker(it, 1) else ColorUtil.brighter(it, 1) })
-        html.editorKit = HTMLEditorKit().apply {
-            styleSheet.addRule("body { font-family: sans-serif; font-size: ${fontPt}pt; color: #$fg; margin: 6px; }")
-            styleSheet.addRule("p { margin-top: 6px; margin-bottom: 6px; }")
-            styleSheet.addRule("h2 { font-size: ${fontPt + 5}pt; margin-top: 4px; margin-bottom: 8px; }")
-            styleSheet.addRule("h3 { font-size: ${fontPt + 3}pt; margin-top: 16px; margin-bottom: 6px; }")
-            styleSheet.addRule("h4 { font-size: ${fontPt + 1}pt; margin-top: 10px; margin-bottom: 2px; }")
-            styleSheet.addRule("pre { font-family: monospace; font-size: ${fontPt}pt; background-color: #$codeBg; margin: 4px; padding: 6px; }")
-            styleSheet.addRule("tt { font-family: monospace; }")
-            styleSheet.addRule("td { padding: 2px 10px 2px 0px; }")
-            styleSheet.addRule("td.g, th.g { border: 1px solid #${ColorUtil.toHex(JBColor.border())}; padding: 5px; }")
+        // HTMLEditorKit().styleSheet is the application-wide default sheet shared by every HTML component,
+        // so the rules go into a private sheet attached to this pane's own document instead.
+        val kit = HTMLEditorKit()
+        val sheet = StyleSheet().apply {
+            addRule("body { font-family: sans-serif; font-size: ${fontPt}pt; color: #$fg; margin: 6px; }")
+            addRule("p { margin-top: 6px; margin-bottom: 6px; }")
+            addRule("h2 { font-size: ${fontPt + 5}pt; margin-top: 4px; margin-bottom: 8px; }")
+            addRule("h3 { font-size: ${fontPt + 3}pt; margin-top: 16px; margin-bottom: 6px; }")
+            addRule("h4 { font-size: ${fontPt + 1}pt; margin-top: 10px; margin-bottom: 2px; }")
+            addRule("pre { font-family: monospace; font-size: ${fontPt}pt; background-color: #$codeBg; margin: 4px; padding: 6px; }")
+            addRule("tt { font-family: monospace; }")
+            addRule("td { padding: 2px 10px 2px 0px; }")
+            addRule("td.g, th.g { border: 1px solid #${ColorUtil.toHex(JBColor.border())}; padding: 5px; }")
         }
+        html.editorKit = kit
+        (html.document as HTMLDocument).styleSheet.addStyleSheet(sheet)
         html.text = "<html><body>$statementHtml</body></html>"
         html.caretPosition = 0
     }
